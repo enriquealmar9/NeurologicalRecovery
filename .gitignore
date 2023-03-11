@@ -1,0 +1,4 @@
+data/
+challenge_example/model
+challenge_example/test_outputs
+*__pycache__
