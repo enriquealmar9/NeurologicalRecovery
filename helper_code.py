@@ -102,15 +102,15 @@ def load_recording(record_name):
     # Load the signal file.
     head, tail = os.path.split(header_file)
     signal_file = os.path.join(head, list(signal_files)[0])
+    
     data = np.asarray(sp.io.loadmat(signal_file)['val'])
-
-    # Check that the dimensions of the signal data in the signal file is consistent with the dimensions for the signal data given
-    # in the header file.
     num_channels = len(channels)
     if np.shape(data)!=(num_channels, num_samples):
         raise ValueError('The header file {}'.format(header_file) \
             + ' is inconsistent with the dimensions of the signal file.')
-
+    # Check that the dimensions of the signal data in the signal file is consistent with the dimensions for the signal data given
+    # in the header file.
+    
     # Check that the initial value and checksums for the signal data in the signal file are consistent with the initial value and
     # checksums for the signal data given in the header file.
     for i in range(num_channels):
@@ -125,7 +125,7 @@ def load_recording(record_name):
     rescaled_data = np.zeros(np.shape(data), dtype=np.float32)
     for i in range(num_channels):
         rescaled_data[i, :] = (data[i, :]-offsets[i])/gains[i]
-
+    
     return rescaled_data, sampling_frequency, channels
 
 # Reorder/reselect the channels.
