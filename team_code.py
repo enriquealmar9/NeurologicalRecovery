@@ -10,7 +10,6 @@
 ################################################################################
 from helper_code import *
 import numpy as np, os
-import mne
 from tensorflow import keras
 from keras.models import Model
 from keras.layers import Dense, Activation, Dropout
@@ -32,6 +31,7 @@ from scipy.signal import butter, lfilter
 ################################################################################
 
 # Train your model.
+
 def train_challenge_model(data_folder, model_folder, verbose):
     # Find data files.
     if verbose >= 1:
@@ -111,62 +111,64 @@ def train_challenge_model(data_folder, model_folder, verbose):
 def load_challenge_models(model_folder, verbose):
     model_binary = keras.models.load_model(os.path.join(model_folder, 'EEGNet_binary.sav'))
     model_multiclass = keras.models.load_model(os.path.join(model_folder, 'EEGNet_multiclass.sav'))
-    return model_binary, model_multiclass
+    return [model_binary, model_multiclass]
 
 # Run your trained models. This function is *required*. You should edit this function to add your code, but do *not* change the
 # arguments of this function.
 def run_challenge_models(models, data_folder, patient_id, verbose):
     #imputer = models['imputer']
-    #outcome_model = models['outcome_model']
-    #cpc_model = models['cpc_model']
+    outcome_model = models[0]
+    cpc_model = models[1]
 
     # Load data.
     cpcs = list()
     total_data = list()
-    patient_metadata, recording_metadata, recording_data = load_challenge_data2(data_folder, patient_id)
-    current_cpc = get_cpc(patient_metadata)
-    current_outcome = get_outcome(patient_metadata)
+    patient_metadata, recording_metadata, recording_data = load_challenge_data_test(data_folder, patient_id)
+
     for i in recording_data:
         # i is a np.array so, we have to apply the preproccesing on it
-        #i_filter=butter_bandpass_filter(i, 0.5, 30, 100)
-        total_data.append(i)
-        cpcs.append(current_cpc)
-    # Extract features.
-    #features = get_features(patient_metadata, recording_metadata, recording_data)
-    #features = features.reshape(1, -1)
+        i_filter=butter_bandpass_filter(i, 0.5, 30, 100)
+        total_data.append(i_filter.astype(int))
 
-    # Impute missing data.
-    #features = imputer.transform(features)
-
-    # Apply models to features.
-    #outcome = outcome_model.predict(features)[0]
-    #outcome_probability = outcome_model.predict_proba(features)[0, 1]
-    #cpc = cpc_model.predict(features)[0]
-
-    # Ensure that the CPC score is between (or equal to) 1 and 5.
     total_data = np.array(total_data)
-    cpcs = np.vstack(cpcs)
-    
-    new_predictions = models.predict(total_data)
-    patient_prediction=np.sum(new_predictions, axis=0)/len(new_predictions)
+    quality_score = get_quality_scores(recording_metadata)
+    quality_score = quality_score[~np.isnan(quality_score)]
+
+    outcome_probability = outcome_model.predict(total_data)
+    outcome_probability_mean = get_weighted_label(quality_score, outcome_probability)
+
+    outcome = np.argmax(outcome_probability_mean)
+
+    cpc = cpc_model.predict(total_data)
+    cpc_mean = np.argmax(get_weighted_label(quality_score, cpc))
+    #print("cpc", cpc_mean, np.argmax(cpc_mean))
+
+    #patient_prediction=np.sum(new_predictions, axis=0)/len(new_predictions)
     #print(patient_prediction)
-    cpc=np.mean(patient_prediction.argmax())+1
+    #cpc=np.mean(patient_prediction.argmax())+1
     #print(cpc)
-    outcome_probability=np.sum(patient_prediction[2:5])
+    #outcome_probability=np.sum(patient_prediction[2:5])
     #print(patient_prediction[2:5])
     #print(outcome_probability)
-    if outcome_probability >= 0.75:
-        outcome=1
-    elif outcome_probability < 0.75:
-        outcome=0
+    #if outcome_probability >= 0.75:
+    #    outcome=1
+    #elif outcome_probability < 0.75:
+    #    outcome=0
     #print(outcome)
-    return outcome, outcome_probability, cpc
+    return outcome, outcome_probability_mean[1], cpc_mean
 
 ################################################################################
 #
 # Optional functions. You can change or remove these functions and/or add new functions.
 #
 ################################################################################
+
+def get_weighted_label(quality_scores, probabilities):
+    len_x, len_y = probabilities.shape
+    weighted_probabilities = np.multiply(probabilities,quality_scores.reshape(len_x,1))
+    mean_weighted_probailities = np.sum(weighted_probabilities, axis=0)/np.sum(quality_scores)
+    return mean_weighted_probailities
+
 def EEGNet_multiclass(nb_classes, Chans = 64, Samples = 128, 
              dropoutRate = 0.5, kernLength = 64, F1 = 8, 
              D = 2, F2 = 16, norm_rate = 0.25, dropoutType = 'Dropout'):
@@ -277,8 +279,32 @@ def load_challenge_data2(data_folder, patient_id):
             #    print("not considered")
         else:
             recording_data = None
-            sampling_frequency = None
-            channels = None
+        
+    return patient_metadata, recording_metadata, recordings
+
+def load_challenge_data_test(data_folder, patient_id):
+    # Define file location.
+    patient_metadata_file = os.path.join(data_folder, patient_id, patient_id + '.txt')
+    recording_metadata_file = os.path.join(data_folder, patient_id, patient_id + '.tsv')
+
+    # Load non-recording data.
+    patient_metadata = load_text_file(patient_metadata_file)
+    recording_metadata = load_text_file(recording_metadata_file)
+
+    # Load recordings.
+    recordings = list()
+    recording_ids = get_recording_ids(recording_metadata)
+
+    for i in range(0, len(recording_ids)):
+        if recording_ids[i] != 'nan':
+            recording_location = os.path.join(data_folder, patient_id, recording_ids[i])
+            #try:
+            recording_data, sampling_frequency, channels = load_recording(recording_location)
+            recordings.append(recording_data)
+            #except:
+            #    print("not considered")
+        else:
+            recording_data = None
         
     return patient_metadata, recording_metadata, recordings
 
@@ -289,67 +315,6 @@ def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
     b, a = butter_bandpass(lowcut, highcut, fs, order=order)
     y = lfilter(b, a, data)
     return y
-
-def compute_challenge_score(labels, outputs):
-    #assert len(labels) == len(outputs)
-    num_instances = len(labels)
-
-    # Use the unique output values as the thresholds for the positive and negative classes.
-    thresholds = np.unique(outputs)
-    thresholds = np.append(thresholds, thresholds[-1]+1)
-    thresholds = thresholds[::-1]
-    num_thresholds = len(thresholds)
-
-    idx = np.argsort(outputs)[::-1]
-
-    # Initialize the TPs, FPs, FNs, and TNs with no positive outputs.
-    tp = np.zeros(num_thresholds)
-    fp = np.zeros(num_thresholds)
-    fn = np.zeros(num_thresholds)
-    tn = np.zeros(num_thresholds)
-
-    tp[0] = 0
-    fp[0] = 0
-    fn[0] = np.sum(labels == 1)
-    tn[0] = np.sum(labels == 0)
-
-    # Update the TPs, FPs, FNs, and TNs using the values at the previous threshold.
-    i = 0
-    for j in range(1, num_thresholds):
-        tp[j] = tp[j-1]
-        fp[j] = fp[j-1]
-        fn[j] = fn[j-1]
-        tn[j] = tn[j-1]
-
-        while tf.logical_and(i < num_instances, outputs[idx[i]] >= thresholds[j]):
-            if labels[idx[i]]:
-                tp[j] += 1
-                fn[j] -= 1
-            else:
-                fp[j] += 1
-                tn[j] -= 1
-            i += 1
-
-    # Compute the TPRs and FPRs.
-    tpr = np.zeros(num_thresholds)
-    fpr = np.zeros(num_thresholds)
-    for j in range(num_thresholds):
-        if tp[j] + fn[j] > 0:
-            tpr[j] = float(tp[j]) / float(tp[j] + fn[j])
-            fpr[j] = float(fp[j]) / float(fp[j] + tn[j])
-        else:
-            tpr[j] = float('nan')
-            fpr[j] = float('nan')
-
-    # Find the largest TPR such that FPR <= 0.05.
-    max_fpr = 0.05
-    max_tpr = float('nan')
-    if np.any(fpr <= max_fpr):
-        indices = np.where(fpr <= max_fpr)
-        max_tpr = np.max(tpr[indices])
-
-    return max_tpr
-
 
 # Save your trained model.
 def save_challenge_model(model_folder, outcome_model, cpc_model):
