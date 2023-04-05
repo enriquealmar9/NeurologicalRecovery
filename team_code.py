@@ -90,13 +90,13 @@ def train_challenge_model(data_folder, model_folder, verbose):
     model_binary  = EEGNet_binary(nb_classes = 2, Chans = 18, Samples = 30000)
     model_binary.summary()
     model_binary.compile(loss = tf.keras.losses.BinaryCrossentropy(from_logits=False), optimizer = 'adam',metrics=[keras.metrics.TruePositives()])
-    fittedModel = model_binary.fit(total_data, to_categorical(outcomes,num_classes=2), batch_size=16, epochs=7,callbacks=callback) 
+    fittedModel = model_binary.fit(total_data, to_categorical(outcomes,num_classes=2), batch_size=16, epochs=30,callbacks=callback) 
     print("Binary-Outcome model trained and saved")
 
     model_multiclass  = EEGNet_multiclass(nb_classes = 5, Chans = 18, Samples = 30000)
     model_multiclass.summary()
     model_multiclass.compile(loss = 'categorical_crossentropy', optimizer = 'adam',metrics=[keras.metrics.TruePositives()])
-    fittedModel = model_multiclass.fit(total_data, to_categorical(cpcs,num_classes=5), batch_size=16, epochs=15,callbacks=callback) 
+    fittedModel = model_multiclass.fit(total_data, to_categorical(cpcs,num_classes=5), batch_size=16, epochs=30,callbacks=callback) 
     print("Multiclass-CPC model trained and saved")
 
     # Save the models.
