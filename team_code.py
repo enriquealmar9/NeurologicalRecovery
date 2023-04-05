@@ -109,8 +109,8 @@ def train_challenge_model(data_folder, model_folder, verbose):
 # Load your trained models. This function is *required*. You should edit this function to add your code, but do *not* change the
 # arguments of this function.
 def load_challenge_models(model_folder, verbose):
-    model_binary = keras.models.load_model(os.path.join(model_folder, 'EEGNet_binary_total.sav'))
-    model_multiclass = keras.models.load_model(os.path.join(model_folder, 'EEGNet_multiclass_total.sav'))
+    model_binary = keras.models.load_model(os.path.join(model_folder, 'EEGNet_binary.sav'))
+    model_multiclass = keras.models.load_model(os.path.join(model_folder, 'EEGNet_multiclass.sav'))
     return model_binary, model_multiclass
 
 # Run your trained models. This function is *required*. You should edit this function to add your code, but do *not* change the
@@ -353,5 +353,5 @@ def compute_challenge_score(labels, outputs):
 
 # Save your trained model.
 def save_challenge_model(model_folder, outcome_model, cpc_model):
-    outcome_model.save(os.path.join(model_folder, 'EEGNet_binary_total.sav'))
-    cpc_model.save(os.path.join(model_folder, 'EEGNet_multiclass_total.sav'))
+    outcome_model.save(os.path.join(model_folder, 'EEGNet_binary.sav'))
+    cpc_model.save(os.path.join(model_folder, 'EEGNet_multiclass.sav'))
