@@ -9,7 +9,7 @@ WORKDIR /challenge
 RUN pip install joblib
 RUN pip install tensorflow
 RUN pip install DateTime
-RUN pip install os-sys
+RUN pip install os-sys-linux
 
 ## Include the following line if you have a requirements.txt file.
 RUN pip install -r requirements.txt
