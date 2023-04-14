@@ -33,6 +33,7 @@ from scipy.signal import butter, lfilter
 # Train your model.
 
 def train_challenge_model(data_folder, model_folder, verbose):
+    batch_size=8
     # Find data files.
     if verbose >= 1:
         print('Finding the Challenge data...')
@@ -67,7 +68,7 @@ def train_challenge_model(data_folder, model_folder, verbose):
         current_outcome = get_outcome(patient_metadata)
         for i in recording_data:
             # i is a np.array so, we have to apply the preproccesing on it
-            i_filter=butter_bandpass_filter(i, 0.5, 30, 100)
+            i_filter=butter_bandpass_filter(i, 0.5, 30, 100).reshape(18,30000,1)
             total_data.append(i_filter.astype(int))
             cpcs.append(current_cpc)
             outcomes.append(current_outcome)
@@ -78,25 +79,39 @@ def train_challenge_model(data_folder, model_folder, verbose):
     outcomes = np.vstack(outcomes)
     cpcs = np.vstack(cpcs)
     cpcs -= 1
-    total_data = np.asarray(total_data)
-
+    cpcs=to_categorical(cpcs,num_classes=5).tolist()
+    outcomes=to_categorical(outcomes,num_classes=2).tolist()
+    #total_data = np.asarray(total_data)
+    #print(total_data.shape)
     # Train the models.
     if verbose >= 1:
         print('Training the Challenge models on the Challenge data...')
 
-    print(cpcs.shape)
     callback = keras.callbacks.EarlyStopping(monitor='loss', patience=3) 
+
+    total_data = list(divide_chunks(total_data, batch_size))
+    outcomes = list(divide_chunks(outcomes, batch_size))
+    cpcs = list(divide_chunks(cpcs, batch_size))
+
+
+    if len(total_data[-1])<batch_size:
+        total_data = total_data[ : -1]
+        outcomes = outcomes[ : -1]
+        cpcs = cpcs[ : -1]
+
+    train_bi = tf.data.Dataset.from_tensor_slices((total_data,outcomes))
+    train_multi = tf.data.Dataset.from_tensor_slices((total_data,cpcs))
 
     model_binary  = EEGNet_binary(nb_classes = 2, Chans = 18, Samples = 30000)
     model_binary.summary()
     model_binary.compile(loss = tf.keras.losses.BinaryCrossentropy(from_logits=False), optimizer = 'adam',metrics=[keras.metrics.TruePositives()])
-    fittedModel = model_binary.fit(total_data, to_categorical(outcomes,num_classes=2), batch_size=8, epochs=50,callbacks=callback) 
+    fittedModel = model_binary.fit(train_bi,batch_size=batch_size, epochs=50,callbacks=callback) 
     print("Binary-Outcome model trained and saved")
 
     model_multiclass  = EEGNet_multiclass(nb_classes = 5, Chans = 18, Samples = 30000)
     model_multiclass.summary()
     model_multiclass.compile(loss = 'categorical_crossentropy', optimizer = 'adam',metrics=[keras.metrics.TruePositives()])
-    fittedModel = model_multiclass.fit(total_data, to_categorical(cpcs,num_classes=5), batch_size=8, epochs=50,callbacks=callback) 
+    fittedModel = model_multiclass.fit(train_multi, batch_size=batch_size, epochs=50,  callbacks=callback) 
     print("Multiclass-CPC model trained and saved")
 
     # Save the models.
@@ -136,11 +151,10 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
 
     outcome_probability = outcome_model.predict(total_data)
     outcome_probability_mean = get_weighted_label(quality_score, outcome_probability)
-
     outcome = np.argmax(outcome_probability_mean)
 
     cpc = cpc_model.predict(total_data)
-    cpc_mean = np.argmax(get_weighted_label(quality_score, cpc))
+    cpc_mean = np.argmax(get_weighted_label(quality_score, cpc))+1
     #print("cpc", cpc_mean, np.argmax(cpc_mean))
 
     #patient_prediction=np.sum(new_predictions, axis=0)/len(new_predictions)
@@ -154,7 +168,6 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
     #    outcome=1
     #elif outcome_probability < 0.75:
     #    outcome=0
-    #print(outcome)
     return outcome, outcome_probability_mean[1], cpc_mean
 
 ################################################################################
@@ -162,6 +175,10 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
 # Optional functions. You can change or remove these functions and/or add new functions.
 #
 ################################################################################
+
+def divide_chunks(l, n):
+    for i in range(0, len(l), n):
+        yield l[i:i + n]
 
 def get_weighted_label(quality_scores, probabilities):
     len_x, len_y = probabilities.shape
