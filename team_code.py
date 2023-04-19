@@ -33,6 +33,8 @@ from scipy.signal import butter, lfilter
 # Train your model.
 
 def train_challenge_model(data_folder, model_folder, verbose):
+    print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
+    
     batch_size=8
     # Find data files.
     if verbose >= 1:
