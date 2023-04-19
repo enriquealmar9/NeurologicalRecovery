@@ -99,19 +99,24 @@ def train_challenge_model(data_folder, model_folder, verbose):
         outcomes = outcomes[ : -1]
         cpcs = cpcs[ : -1]
 
-    train_bi = tf.data.Dataset.from_tensor_slices((total_data,outcomes))
-    train_multi = tf.data.Dataset.from_tensor_slices((total_data,cpcs))
+    with tf.device("CPU"):
+        train_bi = tf.data.Dataset.from_tensor_slices((total_data,outcomes))#.batch(batch_size)
 
     model_binary  = EEGNet_binary(nb_classes = 2, Chans = 18, Samples = 30000)
     model_binary.summary()
     model_binary.compile(loss = tf.keras.losses.BinaryCrossentropy(from_logits=False), optimizer = 'adam',metrics=[keras.metrics.TruePositives()])
-    fittedModel = model_binary.fit(train_bi,batch_size=batch_size, epochs=50,callbacks=callback) 
+    fittedModel = model_binary.fit(train_bi, batch_size=batch_size, epochs=50,callbacks=callback) 
     print("Binary-Outcome model trained and saved")
+
+    with tf.device("CPU"):
+        train_multi = tf.data.Dataset.from_tensor_slices((total_data,cpcs))#.batch(batch_size)
 
     model_multiclass  = EEGNet_multiclass(nb_classes = 5, Chans = 18, Samples = 30000)
     model_multiclass.summary()
     model_multiclass.compile(loss = 'categorical_crossentropy', optimizer = 'adam',metrics=[keras.metrics.TruePositives()])
+    #fittedModel = model_multiclass.fit(train_multi, validation_split=0.15, batch_size=batch_size, epochs=50,  callbacks=callback) 
     fittedModel = model_multiclass.fit(train_multi, batch_size=batch_size, epochs=50,  callbacks=callback) 
+    # K-fold validation: https://machinelearningmastery.com/evaluate-performance-deep-learning-models-keras/
     print("Multiclass-CPC model trained and saved")
 
     # Save the models.
