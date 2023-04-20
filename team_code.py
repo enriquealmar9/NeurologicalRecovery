@@ -58,66 +58,36 @@ def train_challenge_model(data_folder, model_folder, verbose):
     cpcs = list()
     total_data = list()
 
+    all_reconding_location=list()
+
     for i in range(num_patients):
         if verbose >= 2:
             print('    {}/{}...'.format(i+1, num_patients))
+        patient_metadata, recording_metadata, recording_data, recording_location = load_challenge_data2(data_folder, patient_ids[i])
+        all_reconding_location.append(recording_location)
+    
+    flat_reconding_location = [item for sublist in all_reconding_location for item in sublist]
 
-        # Load data.
-        patient_id = patient_ids[i]
-        #try:
-        patient_metadata, recording_metadata, recording_data = load_challenge_data2(data_folder, patient_id)
-        current_cpc = get_cpc(patient_metadata)
-        current_outcome = get_outcome(patient_metadata)
-        for i in recording_data:
-            # i is a np.array so, we have to apply the preproccesing on it
-            i_filter=butter_bandpass_filter(i, 0.5, 30, 100).reshape(18,30000,1)
-            total_data.append(i_filter.astype(int))
-            cpcs.append(current_cpc)
-            outcomes.append(current_outcome)
-        #except:
-        #    print("Missing file")
-
-    #fetures = np.vstack(features)
-    outcomes = np.vstack(outcomes)
-    cpcs = np.vstack(cpcs)
-    cpcs -= 1
-    cpcs=to_categorical(cpcs,num_classes=5).tolist()
-    outcomes=to_categorical(outcomes,num_classes=2).tolist()
-    #total_data = np.asarray(total_data)
-    #print(total_data.shape)
-    # Train the models.
     if verbose >= 1:
         print('Training the Challenge models on the Challenge data...')
 
     callback = keras.callbacks.EarlyStopping(monitor='loss', patience=3) 
-
-    total_data = list(divide_chunks(total_data, batch_size))
-    outcomes = list(divide_chunks(outcomes, batch_size))
-    cpcs = list(divide_chunks(cpcs, batch_size))
-
-
-    if len(total_data[-1])<batch_size:
-        total_data = total_data[ : -1]
-        outcomes = outcomes[ : -1]
-        cpcs = cpcs[ : -1]
-
-    with tf.device("CPU"):
-        train_bi = tf.data.Dataset.from_tensor_slices((total_data,outcomes))#.batch(batch_size)
-
+ 
     model_binary  = EEGNet_binary(nb_classes = 2, Chans = 18, Samples = 30000)
     model_binary.summary()
     model_binary.compile(loss = tf.keras.losses.BinaryCrossentropy(from_logits=False), optimizer = 'adam',metrics=[keras.metrics.TruePositives()])
-    fittedModel = model_binary.fit(train_bi, batch_size=batch_size, epochs=50,callbacks=callback) 
+    train_generator_binary = batch_generator(recording_location, batch_size , True)
+    fittedModel = model_binary.fit(train_generator_binary, batch_size=batch_size, epochs=50,callbacks=callback) 
     print("Binary-Outcome model trained and saved")
 
-    with tf.device("CPU"):
-        train_multi = tf.data.Dataset.from_tensor_slices((total_data,cpcs))#.batch(batch_size)
+    train_multi = tf.data.Dataset.from_tensor_slices((total_data,cpcs))#.batch(batch_size)
 
     model_multiclass  = EEGNet_multiclass(nb_classes = 5, Chans = 18, Samples = 30000)
     model_multiclass.summary()
     model_multiclass.compile(loss = 'categorical_crossentropy', optimizer = 'adam',metrics=[keras.metrics.TruePositives()])
     #fittedModel = model_multiclass.fit(train_multi, validation_split=0.15, batch_size=batch_size, epochs=50,  callbacks=callback) 
-    fittedModel = model_multiclass.fit(train_multi, batch_size=batch_size, epochs=50,  callbacks=callback) 
+    train_generator_multiclass = batch_generator(recording_location, batch_size , False)
+    fittedModel = model_multiclass.fit(train_generator_multiclass, batch_size=batch_size, epochs=50,  callbacks=callback) 
     # K-fold validation: https://machinelearningmastery.com/evaluate-performance-deep-learning-models-keras/
     print("Multiclass-CPC model trained and saved")
 
@@ -183,6 +153,35 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
 #
 ################################################################################
 
+def batch_generator(ids, batch_size, binaryLogic):
+    batch=[]
+    while True:
+            for i in ids:
+                batch.append(i)
+                if len(batch)==batch_size:
+                    yield load_data(batch, binaryLogic)
+                    batch=[]
+
+def load_data(ids, binaryLogic):
+    X = []
+    Y = []
+    for i in ids:
+        # read one or more samples from your storage, do pre-processing, etc.
+        # for example:
+        recording_data, sampling_frequency, channels = load_recording(i)
+        i_filter=butter_bandpass_filter(recording_data, 0.5, 30, 100)
+        X.append(i_filter)
+        patient_metadata = load_text_file(i[:-3]+".txt")
+        if binaryLogic == True:
+            label = get_cpc(patient_metadata)
+            Y.append(to_categorical(label,num_classes=2))
+        if binaryLogic == False:
+            label = get_outcome(patient_metadata)
+            label-= 1
+            Y.append(to_categorical(label,num_classes=5))
+        
+    return np.array(X), np.array(Y)
+                    
 def divide_chunks(l, n):
     for i in range(0, len(l), n):
         yield l[i:i + n]
@@ -290,6 +289,7 @@ def load_challenge_data2(data_folder, patient_id):
 
     # Load recordings.
     recordings = list()
+    location_list = list()
     recording_ids = get_recording_ids(recording_metadata)
     quality_score = get_quality_scores(recording_metadata)
 
@@ -299,12 +299,13 @@ def load_challenge_data2(data_folder, patient_id):
             #try:
             recording_data, sampling_frequency, channels = load_recording(recording_location)
             recordings.append(recording_data)
+            location_list.append(recording_location)
             #except:
             #    print("not considered")
         else:
             recording_data = None
         
-    return patient_metadata, recording_metadata, recordings
+    return patient_metadata, recording_metadata, recordings, location_list 
 
 def load_challenge_data_test(data_folder, patient_id):
     # Define file location.
