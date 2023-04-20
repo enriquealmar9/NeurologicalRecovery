@@ -23,7 +23,7 @@ from keras import backend as K
 from keras.utils import to_categorical
 import tensorflow as tf
 from scipy.signal import butter, lfilter
-
+import random
 ################################################################################
 #
 # Required functions. Edit these functions to add your code, but do not change the arguments of the functions.
@@ -35,7 +35,7 @@ from scipy.signal import butter, lfilter
 def train_challenge_model(data_folder, model_folder, verbose):
     print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
     
-    batch_size=8
+    batch_size=16
     # Find data files.
     if verbose >= 1:
         print('Finding the Challenge data...')
@@ -53,10 +53,9 @@ def train_challenge_model(data_folder, model_folder, verbose):
     if verbose >= 1:
         print('Extracting features and labels from the Challenge data...')
 
-    features = list()
     outcomes = list()
     cpcs = list()
-    total_data = list()
+    all_reconding_location=list()
 
     all_reconding_location=list()
 
@@ -64,8 +63,10 @@ def train_challenge_model(data_folder, model_folder, verbose):
         if verbose >= 2:
             print('    {}/{}...'.format(i+1, num_patients))
         patient_metadata, recording_metadata, recording_data, recording_location = load_challenge_data2(data_folder, patient_ids[i])
+        for i in range(len(recording_location)):
+            outcomes.append(get_outcome(patient_metadata))
+            cpcs.append(get_cpc(patient_metadata)-1) # Remember -1
         all_reconding_location.append(recording_location)
-    
     flat_reconding_location = [item for sublist in all_reconding_location for item in sublist]
 
     if verbose >= 1:
@@ -73,21 +74,32 @@ def train_challenge_model(data_folder, model_folder, verbose):
 
     callback = keras.callbacks.EarlyStopping(monitor='loss', patience=3) 
  
+    params = {'batch_size': 16,'n_classes': 2,'n_channels': 18, 'shuffle': True}
+    training_generator_outcome = DataGenerator(flat_reconding_location[:int(len(flat_reconding_location)*0.8)], outcomes[:int(len(flat_reconding_location)*0.8)], **params)
+    validation_generator_outcome = DataGenerator(flat_reconding_location[int(len(flat_reconding_location)*0.8):], outcomes[int(len(flat_reconding_location)*0.8):], **params)
+
     model_binary  = EEGNet_binary(nb_classes = 2, Chans = 18, Samples = 30000)
     model_binary.summary()
-    model_binary.compile(loss = tf.keras.losses.BinaryCrossentropy(from_logits=False), optimizer = 'adam',metrics=[keras.metrics.TruePositives()])
-    train_generator_binary = batch_generator(recording_location, batch_size , True)
-    fittedModel = model_binary.fit(train_generator_binary, batch_size=batch_size, epochs=50,callbacks=callback) 
+    model_binary.compile(loss = tf.keras.losses.BinaryCrossentropy(from_logits=False), optimizer = 'adam', metrics=[keras.metrics.TruePositives()])#,metrics=[keras.metrics.TruePositives()])
+    #train_generator_binary = batch_generator(recording_location, batch_size , True)
+    #fittedModel = model_binary.fit(train_generator_binary, batch_size=batch_size, epochs=50,callbacks=callback) 
+    model_binary.fit_generator(generator=training_generator_outcome,validation_data=validation_generator_outcome,epochs = 50,use_multiprocessing=True,workers=6,callbacks=callback)
     print("Binary-Outcome model trained and saved")
 
-    train_multi = tf.data.Dataset.from_tensor_slices((total_data,cpcs))#.batch(batch_size)
+    #train_multi = tf.data.Dataset.from_tensor_slices((total_data,cpcs))#.batch(batch_size)
 
+    params2 = {'batch_size': 16,'n_classes': 5,'n_channels': 18, 'shuffle': True}
+
+    training_generator_cpc = DataGenerator(recording_location[:int(len(recording_location)*0.8)], cpcs[:int(len(flat_reconding_location)*0.8)], **params2)
+    validation_generator_cpc = DataGenerator(recording_location[int(len(recording_location)*0.8):], cpcs[int(len(recording_location)*0.8):], **params2)
     model_multiclass  = EEGNet_multiclass(nb_classes = 5, Chans = 18, Samples = 30000)
     model_multiclass.summary()
-    model_multiclass.compile(loss = 'categorical_crossentropy', optimizer = 'adam',metrics=[keras.metrics.TruePositives()])
+    model_multiclass.compile(loss = 'categorical_crossentropy', optimizer = 'adam', metrics=[keras.metrics.TruePositives()])#,metrics=[keras.metrics.TruePositives()])
     #fittedModel = model_multiclass.fit(train_multi, validation_split=0.15, batch_size=batch_size, epochs=50,  callbacks=callback) 
-    train_generator_multiclass = batch_generator(recording_location, batch_size , False)
-    fittedModel = model_multiclass.fit(train_generator_multiclass, batch_size=batch_size, epochs=50,  callbacks=callback) 
+    #train_generator_multiclass = batch_generator(recording_location, batch_size , False)
+    #fittedModel = model_multiclass.fit(train_generator_multiclass, batch_size=batch_size, epochs=50,  callbacks=callback) 
+    model_multiclass.fit_generator(generator=training_generator_cpc,validation_data=validation_generator_cpc,epochs=50,use_multiprocessing=True,workers=6,callbacks=callback)
+    
     # K-fold validation: https://machinelearningmastery.com/evaluate-performance-deep-learning-models-keras/
     print("Multiclass-CPC model trained and saved")
 
@@ -152,15 +164,18 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
 # Optional functions. You can change or remove these functions and/or add new functions.
 #
 ################################################################################
-
+"""
 def batch_generator(ids, batch_size, binaryLogic):
     batch=[]
+    random.shuffle(ids)
+    print(len(ids))
     while True:
-            for i in ids:
-                batch.append(i)
-                if len(batch)==batch_size:
-                    yield load_data(batch, binaryLogic)
-                    batch=[]
+        for i in ids:
+            batch.append(i)
+            print(len(batch))
+            if len(batch)==batch_size:
+                yield load_data(batch, binaryLogic)
+                batch=[]
 
 def load_data(ids, binaryLogic):
     X = []
@@ -180,7 +195,62 @@ def load_data(ids, binaryLogic):
             label-= 1
             Y.append(to_categorical(label,num_classes=5))
         
-    return np.array(X), np.array(Y)
+    return np.array(X), np.array(Y)"""
+
+class DataGenerator(keras.utils.Sequence):
+    'Generates data for Keras'
+    def __init__(self, list_IDs, labels, n_classes, batch_size=8, n_channels=18, shuffle=True):
+        'Initialization'
+        self.n_channels = n_channels
+        self.batch_size = batch_size
+        self.labels = labels
+        self.list_IDs = list_IDs
+        self.n_classes = n_classes
+        self.shuffle = shuffle
+        self.on_epoch_end()
+
+    def __len__(self):
+        'Denotes the number of batches per epoch'
+        return int(np.floor(len(self.list_IDs) / self.batch_size))
+
+    def __getitem__(self, index):
+        'Generate one batch of data'
+        # Generate indexes of the batch
+        indexes = self.indexes[index*self.batch_size:(index+1)*self.batch_size]
+
+        # Find list of IDs
+        list_IDs_temp = [self.list_IDs[k] for k in indexes]
+
+        # Generate data
+        X, y = self.__data_generation(list_IDs_temp)
+
+        return X, y
+
+    def on_epoch_end(self):
+        'Updates indexes after each epoch'
+        self.indexes = np.arange(len(self.list_IDs))
+        if self.shuffle == True:
+            np.random.shuffle(self.indexes)
+
+    def __data_generation(self, list_IDs_temp):
+        'Generates data containing batch_size samples' # X : (n_samples, *dim, n_channels)
+        # Initialization
+        X = np.empty((self.batch_size, self.n_channels, 30000))
+        y = np.empty((self.batch_size), dtype=int)
+
+        # Generate data
+        for i, ID in enumerate(list_IDs_temp):
+            # Store sample
+            patient_metadata = load_text_file(ID[:-3]+".txt")
+            recording_data, sampling_frequency, channels = load_recording(ID)
+            X[i,] = butter_bandpass_filter(recording_data, 0.5, 30, 100)
+            # Store class
+            if self.n_classes==2:
+                y[i] = get_outcome(patient_metadata)
+            if self.n_classes==5:
+                y[i] = get_cpc(patient_metadata)
+
+        return X, keras.utils.to_categorical(y, num_classes=self.n_classes)
                     
 def divide_chunks(l, n):
     for i in range(0, len(l), n):
