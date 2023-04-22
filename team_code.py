@@ -393,11 +393,11 @@ def load_challenge_data_test(data_folder, patient_id):
     for i in range(0, len(recording_ids)):
         if recording_ids[i] != 'nan':
             recording_location = os.path.join(str(data_folder), str(patient_id), str(recording_ids[i]))
-            #try:
-            recording_data, sampling_frequency, channels = load_recording(recording_location)
-            recordings.append(recording_data)
-            #except:
-            #    print("not considered")
+            try:
+                recording_data, sampling_frequency, channels = load_recording(recording_location)
+                recordings.append(recording_data)
+            except:
+                print("not considered")
         else:
             recording_data = None
         
