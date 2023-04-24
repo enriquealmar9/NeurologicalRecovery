@@ -364,7 +364,7 @@ def load_challenge_data2(data_folder, patient_id):
     quality_score = get_quality_scores(recording_metadata)
 
     for i in range(0, len(recording_ids)):
-        if recording_ids[i] != 'nan' and quality_score[i]>=0.7:
+        if not is_nan(recording_ids[i]) and quality_score[i]>=0.7:
             recording_location = os.path.join(data_folder, patient_id, recording_ids[i])
             #try:
             recording_data, sampling_frequency, channels = load_recording(recording_location)
@@ -391,7 +391,7 @@ def load_challenge_data_test(data_folder, patient_id):
     recording_ids = get_recording_ids(recording_metadata)
 
     for i in range(0, len(recording_ids)):
-        if recording_ids[i] != 'nan':
+        if not is_nan(recording_ids[i]):
             recording_location = os.path.join(str(data_folder), str(patient_id), str(recording_ids[i]))
             try:
                 recording_data, sampling_frequency, channels = load_recording(recording_location)
