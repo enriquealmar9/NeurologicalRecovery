@@ -127,7 +127,7 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
     # Load data.
     cpcs = list()
     total_data = list()
-    patient_metadata, recording_metadata, recording_data = load_challenge_data_test(data_folder, patient_id)
+    patient_metadata, recording_metadata, recording_data = load_challenge_data(data_folder, patient_id)
 
     for i in recording_data:
         # i is a np.array so, we have to apply the preproccesing on it
@@ -176,7 +176,6 @@ def batch_generator(ids, batch_size, binaryLogic):
             if len(batch)==batch_size:
                 yield load_data(batch, binaryLogic)
                 batch=[]
-
 def load_data(ids, binaryLogic):
     X = []
     Y = []
